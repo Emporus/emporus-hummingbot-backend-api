@@ -142,6 +142,14 @@ class DockerManager:
             else:
                 return {"success": False, "message": "Password not provided. We cannot start the bot without a password."}
 
+        aws_access_key = os.environ.get('AWS_ACCESS_KEY_ID', None)
+        aws_secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY', None)
+        aws_default_region = os.environ.get('AWS_DEFAULT_REGION', None)
+        if aws_access_key and aws_secret_key and aws_default_region:
+            environment["AWS_ACCESS_KEY_ID"] = aws_access_key
+            environment["AWS_SECRET_ACCESS_KEY"] = aws_secret_key
+            environment["AWS_DEFAULT_REGION"] = aws_default_region
+
         log_config = LogConfig(
             type="json-file",
             config={
