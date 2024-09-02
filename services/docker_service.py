@@ -11,6 +11,9 @@ from utils.file_system import FileSystemUtil
 
 file_system = FileSystemUtil()
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 class DockerManager:
     def __init__(self):
@@ -90,6 +93,7 @@ class DockerManager:
         bots_path = os.environ.get('BOTS_PATH', self.SOURCE_PATH)  # Default to 'SOURCE_PATH' if BOTS_PATH is not set
         instance_name = f"hummingbot-{config.instance_name}"
         instance_dir = os.path.join("bots", 'instances', instance_name)
+        logger.info(f"Creating {instance_name} instance at {instance_dir}, bots path: {bots_path}")
         if not os.path.exists(instance_dir):
             os.makedirs(instance_dir)
             os.makedirs(os.path.join(instance_dir, 'data'))
@@ -105,12 +109,17 @@ class DockerManager:
 
         # Remove the destination directory if it already exists
         if os.path.exists(destination_credentials_dir):
+            logger.info(f"Removing existing credentials directory at {destination_credentials_dir}")
             shutil.rmtree(destination_credentials_dir)
 
-        # Copy the entire contents of source_credentials_dir to destination_credentials_dir     
+        # Copy the entire contents of source_credentials_dir to destination_credentials_dir
+        logger.info(f"Copying credentials for {config.credentials_profile} from {source_credentials_dir} to {destination_credentials_dir}")
         shutil.copytree(source_credentials_dir, destination_credentials_dir)
+        logger.info(f"Copying scripts config from {script_config_dir} to {destination_scripts_config_dir}")
         shutil.copytree(script_config_dir, destination_scripts_config_dir)
+        logger.info(f"Copying controllers config from {controllers_config_dir} to {destination_controllers_config_dir}")
         shutil.copytree(controllers_config_dir, destination_controllers_config_dir)
+        logger.info(f"Updating conf_client.yml with instance_id: {instance_name}")
         conf_file_path = f"{instance_dir}/conf/conf_client.yml"
         client_config = FileSystemUtil.read_yaml_file(conf_file_path)
         client_config['instance_id'] = instance_name
@@ -127,6 +136,7 @@ class DockerManager:
             os.path.abspath(os.path.join(bots_path, "bots", 'scripts')): {'bind': '/home/hummingbot/scripts', 'mode': 'rw'},
             os.path.abspath(os.path.join(bots_path, "bots", 'controllers')): {'bind': '/home/hummingbot/controllers', 'mode': 'rw'},
         }
+        logger.info(f"Volumes: {volumes}")
 
         # Set up environment variables
         environment = {}
@@ -156,6 +166,7 @@ class DockerManager:
                 'max-size': '10m',
                 'max-file': "5",
             })
+        logger.info(f"Creating container {instance_name} with image {config.image}")
         try:
             self.client.containers.run(
                 image=config.image,
@@ -168,6 +179,8 @@ class DockerManager:
                 stdin_open=True,
                 log_config=log_config,
             )
+            logger.info(f"Instance {instance_name} created successfully!")
             return {"success": True, "message": f"Instance {instance_name} created successfully."}
         except docker.errors.DockerException as e:
+            logger.error(f"Error creating instance {instance_name}: {e}")
             return {"success": False, "message": str(e)}
