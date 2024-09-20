@@ -1,3 +1,4 @@
+import datetime as dt
 import os
 import shutil
 
@@ -46,5 +47,6 @@ class BotArchiver:
             self.compress_directory(instance_dir, archive_path)
             shutil.rmtree(instance_dir)  # Remove the instance directory
         else:
-            archive_path = os.path.join('bots', 'archived', instance_name)
+            archive_path = (f"{os.path.join('bots', 'archived', instance_name)}_"
+                            f"{dt.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}")
             shutil.move(instance_dir, archive_path)
