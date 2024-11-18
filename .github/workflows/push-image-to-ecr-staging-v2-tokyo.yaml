@@ -9,6 +9,8 @@ env:
   EMPORUS_REGISTRY: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com
   EMPORUS_IMAGE_BASE: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-hummingbot-backend-api
   EMPORUS_IMAGE: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-hummingbot-backend-api:${{ github.sha }}
+  PACKAGE_NAME: 'emporus-hummingbot-backend-api'
+  SPACE_CHANNEL_NAME: 'staging-v2-tokyo-errors-CI-CD'
 
 jobs:
   publish_image:
@@ -73,3 +75,48 @@ jobs:
           tags: |
             ${{ env.EMPORUS_IMAGE_BASE }}:staging-v2-tokyo
             ${{ env.EMPORUS_IMAGE }}
+
+      - name: Send error to Space
+        if: failure()
+        run: |
+          curl -X POST 'https://${{ secrets.SPACE_DOMAIN_NEW }}/api/http/chats/messages/send-message?$fields=details' \
+            -H 'Authorization: Bearer ${{ secrets.SPACE_TOKEN_NEW }}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "channel": "channel:name:${{ env.SPACE_CHANNEL_NAME }}",
+              "content": {
+                "className": "ChatMessage.Block",
+                "style": "ERROR",
+                "outline": {
+                  "className": "MessageOutline",
+                  "icon": {
+                    "icon": "issue"
+                  },
+                  "text": "CI-CD BUILD ERROR -  ${{ env.PACKAGE_NAME }}"
+                },
+                "sections": [
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "-------------------------------- \n- Environment : staging-v2-tokyo.\n- Image name : ${{ env.PACKAGE_NAME }}.",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- Error message : Docker image build failed ",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- Build details: \n View build logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}  \n-------------------------------- ",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  }
+                ]
+              }
+            }'
