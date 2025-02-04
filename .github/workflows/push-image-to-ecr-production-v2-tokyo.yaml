@@ -1,0 +1,126 @@
+name: "Push image to ecr Production-v2-tokyo❗️"
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  EMPORUS_REGISTRY: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com
+  EMPORUS_IMAGE_BASE: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-production-hummingbot-backend-api
+  EMPORUS_IMAGE: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-production-hummingbot-backend-api:${{ github.sha }}
+  PACKAGE_NAME: 'emporus-hummingbot-backend-api'
+  SPACE_CHANNEL_NAME: 'production-v2-tokyo-errors-CI-CD'
+
+jobs:
+  publish_image:
+    name: Push Docker image to ECR
+    runs-on: ubuntu-20.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+        with:
+          ref: 'main'
+      
+      - name: Set up QEMU 
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING_V2 }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING_V2 }}
+          aws-region: ${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}
+      
+      - name: Login to ECR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.EMPORUS_REGISTRY }}
+          username: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING_V2 }}
+          password: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING_V2 }}
+
+      - name: Backup old image
+        run: |
+          OLD_TAG=$(aws ecr describe-images \
+            --repository-name emporus-production-hummingbot-backend-api \
+            --region ${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }} \
+            --query 'imageDetails[?imageTags && contains(imageTags, `production-v2-tokyo`)].imageDigest' \
+            --output text)
+
+          if [ -n "$OLD_TAG" ]; then
+            MANIFEST=$(aws ecr batch-get-image \
+              --repository-name emporus-production-hummingbot-backend-api \
+              --image-ids imageDigest=$OLD_TAG \
+              --region ${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }} \
+              --query 'images[0].imageManifest' \
+              --output text)
+
+            aws ecr put-image \
+              --repository-name emporus-production-hummingbot-backend-api \
+              --image-tag production-v2-tokyo-backup \
+              --image-manifest "$MANIFEST" \
+              --region ${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}
+          fi
+
+      - name: Build and push new image
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          platforms: linux/amd64,linux/arm64
+          builder: ${{ steps.buildx.outputs.name }}
+          file: Dockerfile
+          push: true
+          no-cache: true
+          tags: |
+            ${{ env.EMPORUS_IMAGE_BASE }}:staging-v2-tokyo
+            ${{ env.EMPORUS_IMAGE }}
+
+      - name: Send error to Space
+        if: failure()
+        run: |
+          curl -X POST 'https://${{ secrets.SPACE_DOMAIN_NEW }}/api/http/chats/messages/send-message?$fields=details' \
+            -H 'Authorization: Bearer ${{ secrets.SPACE_TOKEN_NEW }}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "channel": "channel:name:${{ env.SPACE_CHANNEL_NAME }}",
+              "content": {
+                "className": "ChatMessage.Block",
+                "style": "ERROR",
+                "outline": {
+                  "className": "MessageOutline",
+                  "icon": {
+                    "icon": "issue"
+                  },
+                  "text": "CI-CD BUILD ERROR -  ${{ env.PACKAGE_NAME }}"
+                },
+                "sections": [
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "-------------------------------- \n- Environment : Production-v2-tokyo.\n- Image name : ${{ env.PACKAGE_NAME }}.",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- Error message : Docker image build failed ",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- Build details: \n View build logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}  \n-------------------------------- ",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  }
+                ]
+              }
+            }'
