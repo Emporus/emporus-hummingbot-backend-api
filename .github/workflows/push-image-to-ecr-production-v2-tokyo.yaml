@@ -77,7 +77,7 @@ jobs:
           push: true
           no-cache: true
           tags: |
-            ${{ env.EMPORUS_IMAGE_BASE }}:staging-v2-tokyo
+            ${{ env.EMPORUS_IMAGE_BASE }}:production-v2-tokyo
             ${{ env.EMPORUS_IMAGE }}
 
       - name: Send error to Space
