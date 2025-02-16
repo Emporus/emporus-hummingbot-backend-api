@@ -20,6 +20,3 @@ dependencies:
       - flake8
       - isort
       - pre-commit
-      # added fix version for eth-keyfile and eth-utils
-      - eth-keyfile==0.5.1
-      - eth-utils==1.10.0
