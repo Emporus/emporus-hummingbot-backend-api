@@ -15,6 +15,7 @@ from routers import (
     manage_files,
     manage_market_data,
     manage_performance,
+    manage_emporus,
 )
 
 load_dotenv()
@@ -56,3 +57,4 @@ app.include_router(manage_backtesting.router, dependencies=[Depends(auth_user)])
 app.include_router(manage_databases.router, dependencies=[Depends(auth_user)])
 app.include_router(manage_performance.router, dependencies=[Depends(auth_user)])
 app.include_router(manage_accounts.router, dependencies=[Depends(auth_user)])
+app.include_router(manage_emporus.router, dependencies=[Depends(auth_user)])
