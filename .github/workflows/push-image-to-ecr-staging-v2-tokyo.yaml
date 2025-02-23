@@ -128,7 +128,7 @@ jobs:
               OLD_IMAGE_ID=$(docker inspect --format='{{.Image}}' $(docker ps -qf "name=backend-api"))
         
               # Recreate container with new image
-              docker-compose up -d --force-recreate dashboard
+              docker-compose up -d --force-recreate backend-api
         
               # Delete old image with non tag
               OLD_IMAGE_ID=$(docker images -q --filter "dangling=true")
