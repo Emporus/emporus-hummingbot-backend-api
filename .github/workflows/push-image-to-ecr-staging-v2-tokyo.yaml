@@ -98,7 +98,7 @@ jobs:
               }
             }'
 
-deploy_to_server:
+  deploy_to_server:
     name: Deploy to server and pull images
     runs-on: ubuntu-20.04
     needs: publish_image
