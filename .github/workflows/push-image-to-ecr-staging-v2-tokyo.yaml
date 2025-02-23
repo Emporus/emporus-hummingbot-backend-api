@@ -98,7 +98,6 @@ jobs:
                 ]
               }
             }'
-
   deploy_to_server:
     name: Deploy to server and pull images
     runs-on: ubuntu-20.04
@@ -123,6 +122,7 @@ jobs:
         
               # Pull Docker images
               docker pull ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-hummingbot-backend-api:staging-v2-tokyo
+              
         
               # Get the old image ID before recreating the container
               OLD_IMAGE_ID=$(docker inspect --format='{{.Image}}' $(docker ps -qf "name=backend-api"))
@@ -199,3 +199,6 @@ jobs:
                 ]
               }
             }'
+         
+            
+
