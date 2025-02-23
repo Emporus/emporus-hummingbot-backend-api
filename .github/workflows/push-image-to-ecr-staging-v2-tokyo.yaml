@@ -11,6 +11,7 @@ env:
   EMPORUS_IMAGE: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-hummingbot-backend-api:${{ github.sha }}
   PACKAGE_NAME: 'emporus-hummingbot-backend-api'
   SPACE_CHANNEL_NAME: 'staging-v2-tokyo-errors-CI-CD'
+  INSTANCE_NAME: 'staging-v2-tokyo-emporus-hummingbot'
 
 jobs:
   publish_image:
