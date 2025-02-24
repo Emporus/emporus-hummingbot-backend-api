@@ -49,6 +49,11 @@ async def get_connector_config_map(connector_name: str):
     return accounts_service.get_connector_config_map(connector_name)
 
 
+@router.get("/connector-all-pairs/{account_name}/{connector_name}", response_model=List[str])
+async def get_connector_all_pairs(account_name: str, connector_name: str):
+    return await accounts_service.get_connector_all_pairs(account_name, connector_name)
+
+
 @router.get("/all-connectors-config-map", response_model=Dict[str, List[str]])
 async def get_all_connectors_config_map():
     all_config_maps = {}

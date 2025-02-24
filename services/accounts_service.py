@@ -272,6 +272,17 @@ class AccountsService:
         connector_config = BackendAPIConfigAdapter(AllConnectorSettings.get_connector_config_keys(connector_name))
         return [key for key in connector_config.hb_config.__fields__.keys() if key != "connector"]
 
+    async def get_connector_all_pairs(self, account_name: str, connector_name: str):
+        """
+        Get all the trading pairs for the specified connector.
+        :param account_name: The name of the account.
+        :param connector_name: The name of the connector.
+        :return: List of trading pairs.
+        """
+        connector = self.get_connector(account_name, connector_name)
+        all_trading_pairs = await connector.all_trading_pairs()
+        return all_trading_pairs
+
     async def add_connector_keys(self, account_name: str, connector_name: str, keys: dict):
         BackendAPISecurity.login_account(account_name=account_name, secrets_manager=self.secrets_manager)
         connector_config = BackendAPIConfigAdapter(AllConnectorSettings.get_connector_config_keys(connector_name))
