@@ -163,3 +163,4 @@ bots/instances
 bots/archived
 bots/data
 .password_verification
+/bots/scripts/*.py
