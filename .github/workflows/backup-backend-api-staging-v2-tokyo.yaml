@@ -1,0 +1,204 @@
+name: "Push image to ecr staging-v2-tokyo for backup"
+
+on:
+  push:
+    branches:
+      - staging-v2-tokyo-backup
+
+env:
+  EMPORUS_REGISTRY: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com
+  EMPORUS_IMAGE_BASE: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-hummingbot-backend-api
+  EMPORUS_IMAGE: ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-hummingbot-backend-api:${{ github.sha }}
+  PACKAGE_NAME: 'emporus-hummingbot-backend-api'
+  SPACE_CHANNEL_NAME: 'staging-v2-tokyo-errors-CI-CD'
+  INSTANCE_NAME: 'staging-v2-tokyo-emporus-hummingbot'
+
+jobs:
+  publish_image:
+    name: Push Docker image to ECR
+    runs-on: ubuntu-20.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+        with:
+          ref: 'staging-v2-tokyo-backup'
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING_V2 }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING_V2 }}
+          aws-region: ${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}
+      
+      - name: Login to ECR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.EMPORUS_REGISTRY }}
+          username: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING_V2 }}
+          password: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING_V2 }}
+
+      - name: Build and push new image
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          file: Dockerfile
+          push: true
+          no-cache: true
+          tags: |
+            ${{ env.EMPORUS_IMAGE_BASE }}:staging-v2-tokyo
+            ${{ env.EMPORUS_IMAGE }}
+
+      - name: Send error to Space
+        if: failure()
+        run: |
+          curl -X POST 'https://${{ secrets.SPACE_DOMAIN_NEW }}/api/http/chats/messages/send-message?$fields=details' \
+            -H 'Authorization: Bearer ${{ secrets.SPACE_TOKEN_NEW }}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "channel": "channel:name:${{ env.SPACE_CHANNEL_NAME }}",
+              "content": {
+                "className": "ChatMessage.Block",
+                "style": "ERROR",
+                "outline": {
+                  "className": "MessageOutline",
+                  "icon": {
+                    "icon": "issue"
+                  },
+                  "text": "CI-CD BUILD ERROR -  ${{ env.PACKAGE_NAME }}-backup"
+                },
+                "sections": [
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "-------------------------------- \n- Environment : staging-v2-tokyo-backup.\n- Image name : ${{ env.PACKAGE_NAME }}.",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- Error message : Docker image build failed ",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- Build details: \n View build logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}  \n-------------------------------- ",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  }
+                ]
+              }
+            }'
+  deploy_to_server:
+    name: Deploy to server and pull images
+    runs-on: ubuntu-20.04
+    needs: publish_image
+    steps:
+      - name: Connect to Twingate
+        uses: twingate/github-action@v1
+        with:
+          service-key: ${{ secrets.TWINGATE_SERVICE_KEY_STAGING_V2_TOKYO }}
+
+      - name: SSH to server and pull images
+        run: |
+            echo "${{ secrets.HUMMINGBOT_EC2_PRIVATE_KEY_STAGING_V2 }}" | tr -d '\r' > hummingbot-ec2-key-staging-v2-tokyo.pem
+            chmod 400 hummingbot-ec2-key-staging-v2-tokyo.pem
+        
+            ssh -o StrictHostKeyChecking=no -i "hummingbot-ec2-key-staging-v2-tokyo.pem" ubuntu@${{ secrets.HUMMINGBOT_DASHBOARD_PRIVATE_EC2_IP_TOKYO }} << 'EOF'
+              cd ~/emporus-hummingbot-deploy
+              git checkout staging-v2-tokyo
+        
+              # Login to ECR
+              aws ecr get-login-password --region ${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com
+        
+              # Pull Docker images
+              docker pull ${{ secrets.AWS_ECR_ID_STAGING_V2 }}.dkr.ecr.${{ secrets.AWS_ECR_REGION_STAGING_V2_TOKYO }}.amazonaws.com/emporus-hummingbot-backend-api:staging-v2-tokyo
+              
+        
+              # Get the old image ID before recreating the container
+              OLD_IMAGE_ID=$(docker inspect --format='{{.Image}}' $(docker ps -qf "name=backend-api"))
+        
+              # Recreate container with new image
+              docker-compose up -d --force-recreate backend-api
+        
+              # Delete old image with non tag
+              OLD_IMAGE_ID=$(docker images -q --filter "dangling=true")
+              if [ ! -z "$OLD_IMAGE_ID" ]; then
+                echo "Removing old image with ID $OLD_IMAGE_ID"
+                docker rmi $OLD_IMAGE_ID
+              else
+               echo "No old images to remove."
+              fi
+
+              rm -f /home/ubuntu/emporus-hummingbot-deploy/hummingbot-ec2-key-staging-v2-tokyo.pem
+            EOF
+
+            rm -f hummingbot-ec2-key-staging-v2-tokyo.pem
+        
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_STAGING_V2 }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGING_V2 }}
+
+      - name: Send error to Space
+        if: failure()
+        run: |
+          curl -X POST 'https://${{ secrets.SPACE_DOMAIN_NEW }}/api/http/chats/messages/send-message?$fields=details' \
+            -H 'Authorization: Bearer ${{ secrets.SPACE_TOKEN_NEW }}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "channel": "channel:name:${{ env.SPACE_CHANNEL_NAME }}",
+              "content": {
+                "className": "ChatMessage.Block",
+                "style": "ERROR",
+                "outline": {
+                  "className": "MessageOutline",
+                  "icon": {
+                    "icon": "issue"
+                  },
+                  "text": "CI-CD DEPLOYMENT ERROR -  ${{ env.PACKAGE_NAME }}"
+                },
+                "sections": [
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "-------------------------------- \n- Environment : staging-v2-tokyo.\n- Service name : ${{ env.PACKAGE_NAME }}.",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- EC2 instance name : ${{ env.INSTANCE_NAME }}.",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- Error message : Deployment service failed.",
+                    "style": "WARNING",
+                    "textSize": "SMALL"
+                  },
+                  {
+                    "className": "MessageSection",
+                    "elements": [],
+                    "header": "- Deployment details: \n View deployment logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}  \n-------------------------------- ",
+                    "style": "ERROR",
+                    "textSize": "SMALL"
+                  }
+                ]
+              }
+            }'
+
+
+
